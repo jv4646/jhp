@@ -86,6 +86,26 @@ function editMessage($token, $chatId, $messageId, $text)
 }
 
 /* ============================================================
+   PERSISTENCIA: Guardar última acción
+   ============================================================ */
+function saveLastAction($tid, $action, $updateId, $user)
+{
+    $file = __DIR__ . '/.last_action';
+    $data = [
+        'transactionId' => $tid,
+        'lastAction' => $action,
+        'lastUpdateId' => $updateId,
+        'processedBy' => $user,
+        'timestamp' => date('Y-m-d H:i:s'),
+        'unix_timestamp' => time()
+    ];
+    
+    if (!file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT))) {
+        error_log("Error guardando .last_action para $tid");
+    }
+}
+
+/* ============================================================
    KEYBOARD
    ============================================================ */
 function buildKeyboard($tid)
@@ -221,7 +241,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['transactionId'])) {
         }
 
         $cb = $upd['callback_query'];
-        if (!isset($cb['data']) || strpos($cb['data'], $tid) === false) {
+        if (!isset($cb['data'])) {
+            continue;
+        }
+
+        // ✅ CORRECCIÓN 2: Validación exacta del formato
+        $callbackParts = explode(':', $cb['data']);
+        if (count($callbackParts) !== 2 || $callbackParts[1] !== $tid) {
             continue;
         }
 
@@ -231,7 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['transactionId'])) {
         }
 
         // Found a matching and NEW callback query!
-        $action = explode(':', $cb['data'])[0];
+        $action = $callbackParts[0];
         $user = $cb['from']['username']
             ?? $cb['from']['first_name']
             ?? 'desconocido';
@@ -253,6 +279,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['transactionId'])) {
 
         // Guardar de inmediato para evitar doble procesamiento
         file_put_contents($statusFile, $updateId);
+
+        // ✅ CORRECCIÓN 5: Guardar en archivo global
+        saveLastAction($tid, $action, $updateId, $user);
 
         $msgId = $cb['message']['message_id'] ?? '';
         $original = $cb['message']['text'] ?? '';
